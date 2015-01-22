@@ -1,0 +1,110 @@
+
+import static java.nio.file.StandardWatchEventKinds.*;
+
+import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
+import java.text.SimpleDateFormat;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.concurrent.BlockingQueue;
+
+
+import com.ubot.ris.server.ReportFrame;
+
+public class FolderSupervisor extends ReportFrame implements Runnable {
+	
+	
+	private Logger log = null;
+	private Path pathSupervise = null;
+	private static HashMap<String, Path> dataMap = new HashMap<String, Path>();
+	private WatchKey key = null;
+	private BlockingQueue<Path> fileQueue;
+
+	public FolderSupervisor(Path pathSupervise, BlockingQueue<Path> fileQueue) {
+		this.pathSupervise = pathSupervise;
+		this.fileQueue = fileQueue;
+	}
+
+	@Override
+	public void run() {
+		// TODO watching folder the file transfer status
+		System.out.println("Folder watching Is On");
+		try {
+			if(pathSupervise == null) throw new UnsupportedOperationException();
+			WatchService watcher = FileSystems.getDefault().newWatchService();
+			pathSupervise.register(watcher, ENTRY_CREATE, ENTRY_MODIFY);
+			key = watcher.take();
+			while(key != null)
+			{
+				for(WatchEvent<?> event : key.pollEvents()) {
+						Path filePath = Paths.get(pathSupervise.toString(), event.context().toString());
+						if (dataMap.size() < 1) 
+						{
+							dataMap = dataQDAO(event.context().toString(),
+									filePath, "add");
+						} else 
+						{
+							if (dataMap.containsKey(event.context().toString())) 
+							{
+								long size = Files.size(filePath);
+								Thread.sleep(1000);
+								if (size == Files.size(filePath)) 
+								{
+									System.out.println(filePath.getFileName() + " 傳送完畢");
+									//TODO : something 
+									fileQueue.put(filePath);
+									// remove the file form detect Map
+									dataMap = dataQDAO(filePath.getFileName()
+											.toString(), null, "remove");
+								}
+							} else 
+							{
+								dataMap = dataQDAO(filePath.getFileName()
+										.toString(), filePath, "add");
+							}
+
+						}
+				}
+				key.reset();
+				key = watcher.take();
+			}
+			
+		}
+		catch (UnsupportedOperationException uoe) 
+		{
+			System.out.println("Directory not found");
+		} 
+		catch (IOException e) 
+		{
+			System.out.println("File not found");
+		} 
+		catch (InterruptedException e) 
+		{
+			System.out.println("watcher InterruptedException");
+		} 
+	}
+	
+	 synchronized HashMap<String, Path> dataQDAO(String name, Path filePath, String task) {
+     	
+       	 switch (task) 
+       	 {
+	   		case "add":
+	   			dataMap.put(name, filePath);
+	   			System.out.println(name + "傳送中....");
+	   			break;
+	   		case "remove":
+	   			dataMap.remove(name);
+	   			break;
+	   		default:
+	   			break;
+   		}
+       	return dataMap;
+       }
+
+}
